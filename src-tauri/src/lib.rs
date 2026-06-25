@@ -9,8 +9,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Manager, State,
+};
 use zeroize::Zeroize;
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_updater::UpdaterExt;
 
 const VAULT_FILE_NAME: &str = "vault.kpass";
 const BACKUP_DIR_NAME: &str = "backups";
@@ -27,6 +33,16 @@ struct VaultSession {
     key: Mutex<Option<[u8; KEY_LENGTH]>>,
 }
 
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct VaultHistoryEntry {
+    id: String,
+    action: String,
+    details: String,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct VaultItem {
@@ -39,6 +55,16 @@ struct VaultItem {
     notes: String,
     created_at: String,
     updated_at: String,
+    #[serde(default)]
+    is_favorite: bool,
+    #[serde(default)]
+    is_pinned: bool,
+    #[serde(default)]
+    history: Vec<VaultHistoryEntry>,
+    #[serde(default)]
+    password_expires_in_days: Option<u32>,
+    #[serde(default)]
+    password_updated_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -123,7 +149,6 @@ fn derive_key(master_password: &str, salt: &[u8]) -> Result<[u8; KEY_LENGTH], St
     .map_err(|error| format!("Parâmetros de criptografia inválidos: {error}"))?;
 
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-
     let mut key = [0u8; KEY_LENGTH];
 
     argon2
@@ -138,7 +163,7 @@ fn encrypt_payload(
     key: &[u8; KEY_LENGTH],
     salt: &[u8],
 ) -> Result<EncryptedVaultFile, String> {
-    let plaintext = serde_json::to_vec(payload)
+    let mut plaintext = serde_json::to_vec(payload)
         .map_err(|error| format!("Erro ao preparar dados do cofre: {error}"))?;
 
     let nonce_bytes = generate_random_bytes::<NONCE_LENGTH>();
@@ -147,6 +172,8 @@ fn encrypt_payload(
     let ciphertext = cipher
         .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_ref())
         .map_err(|_| "Erro ao criptografar o cofre.".to_string())?;
+
+    plaintext.zeroize();
 
     Ok(EncryptedVaultFile {
         version: VAULT_VERSION,
@@ -163,10 +190,7 @@ fn encrypt_payload(
     })
 }
 
-fn decrypt_payload(
-    file: &EncryptedVaultFile,
-    key: &[u8; KEY_LENGTH],
-) -> Result<VaultPayload, String> {
+fn decrypt_payload(file: &EncryptedVaultFile, key: &[u8; KEY_LENGTH]) -> Result<VaultPayload, String> {
     if file.version != VAULT_VERSION {
         return Err("Versão do cofre incompatível.".to_string());
     }
@@ -185,12 +209,15 @@ fn decrypt_payload(
 
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
 
-    let plaintext = cipher
+    let mut plaintext = cipher
         .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
         .map_err(|_| "Senha mestra inválida ou cofre corrompido.".to_string())?;
 
-    serde_json::from_slice::<VaultPayload>(&plaintext)
-        .map_err(|error| format!("Erro ao ler conteúdo do cofre: {error}"))
+    let payload = serde_json::from_slice::<VaultPayload>(&plaintext)
+        .map_err(|error| format!("Erro ao ler conteúdo do cofre: {error}"));
+
+    plaintext.zeroize();
+    payload
 }
 
 fn read_vault_file(app: &AppHandle) -> Result<EncryptedVaultFile, String> {
@@ -205,11 +232,23 @@ fn read_vault_file(app: &AppHandle) -> Result<EncryptedVaultFile, String> {
 
 fn write_vault_file(app: &AppHandle, file: &EncryptedVaultFile) -> Result<(), String> {
     let path = vault_path(app)?;
+    let temp_path = path.with_file_name("vault.kpass.tmp");
+    let backup_path = path.with_file_name("vault.kpass.previous");
 
     let content = serde_json::to_string_pretty(file)
         .map_err(|error| format!("Erro ao preparar arquivo do cofre: {error}"))?;
 
-    fs::write(&path, content).map_err(|error| format!("Não foi possível salvar o cofre: {error}"))
+    fs::write(&temp_path, content)
+        .map_err(|error| format!("Não foi possível preparar o arquivo temporário do cofre: {error}"))?;
+
+    if path.exists() {
+        let _ = fs::copy(&path, &backup_path);
+        fs::remove_file(&path)
+            .map_err(|error| format!("Não foi possível substituir o cofre anterior: {error}"))?;
+    }
+
+    fs::rename(&temp_path, &path)
+        .map_err(|error| format!("Não foi possível salvar o cofre: {error}"))
 }
 
 fn clear_session(session: State<VaultSession>) -> Result<(), String> {
@@ -234,20 +273,24 @@ fn vault_exists(app: AppHandle) -> Result<bool, String> {
 fn create_vault(
     app: AppHandle,
     session: State<VaultSession>,
-    master_password: String,
+    mut master_password: String,
 ) -> Result<VaultResponse, String> {
-    if master_password.trim().len() < 8 {
-        return Err("A senha mestra precisa ter pelo menos 8 caracteres.".to_string());
+    if master_password.trim().len() < 10 {
+        master_password.zeroize();
+        return Err("A senha mestra precisa ter pelo menos 10 caracteres.".to_string());
     }
 
     let path = vault_path(&app)?;
 
     if path.exists() {
+        master_password.zeroize();
         return Err("Já existe um cofre criado neste computador.".to_string());
     }
 
     let salt = generate_random_bytes::<SALT_LENGTH>();
-    let key = derive_key(&master_password, &salt)?;
+    let key_result = derive_key(&master_password, &salt);
+    master_password.zeroize();
+    let key = key_result?;
 
     let payload = VaultPayload { items: vec![] };
     let encrypted_file = encrypt_payload(&payload, &key, &salt)?;
@@ -261,16 +304,14 @@ fn create_vault(
 
     *guard = Some(key);
 
-    Ok(VaultResponse {
-        items: payload.items,
-    })
+    Ok(VaultResponse { items: payload.items })
 }
 
 #[tauri::command]
 fn unlock_vault(
     app: AppHandle,
     session: State<VaultSession>,
-    master_password: String,
+    mut master_password: String,
 ) -> Result<VaultResponse, String> {
     let encrypted_file = read_vault_file(&app)?;
 
@@ -278,7 +319,9 @@ fn unlock_vault(
         .decode(&encrypted_file.salt)
         .map_err(|_| "Salt do cofre inválido.".to_string())?;
 
-    let key = derive_key(&master_password, &salt)?;
+    let key_result = derive_key(&master_password, &salt);
+    master_password.zeroize();
+    let key = key_result?;
     let payload = decrypt_payload(&encrypted_file, &key)?;
 
     let mut guard = session
@@ -288,9 +331,7 @@ fn unlock_vault(
 
     *guard = Some(key);
 
-    Ok(VaultResponse {
-        items: payload.items,
-    })
+    Ok(VaultResponse { items: payload.items })
 }
 
 #[tauri::command]
@@ -461,18 +502,24 @@ fn import_backup_from_path(
 fn change_master_password(
     app: AppHandle,
     session: State<VaultSession>,
-    current_master_password: String,
-    new_master_password: String,
+    mut current_master_password: String,
+    mut new_master_password: String,
 ) -> Result<(), String> {
     if current_master_password.trim().is_empty() {
+        current_master_password.zeroize();
+        new_master_password.zeroize();
         return Err("Digite a senha mestra atual.".to_string());
     }
 
-    if new_master_password.trim().len() < 8 {
-        return Err("A nova senha mestra precisa ter pelo menos 8 caracteres.".to_string());
+    if new_master_password.trim().len() < 10 {
+        current_master_password.zeroize();
+        new_master_password.zeroize();
+        return Err("A nova senha mestra precisa ter pelo menos 10 caracteres.".to_string());
     }
 
     if current_master_password == new_master_password {
+        current_master_password.zeroize();
+        new_master_password.zeroize();
         return Err("A nova senha mestra precisa ser diferente da atual.".to_string());
     }
 
@@ -482,11 +529,15 @@ fn change_master_password(
         .decode(&encrypted_file.salt)
         .map_err(|_| "Salt do cofre inválido.".to_string())?;
 
-    let mut current_key = derive_key(&current_master_password, &salt)?;
+    let current_key_result = derive_key(&current_master_password, &salt);
+    current_master_password.zeroize();
+    let mut current_key = current_key_result?;
     let payload = decrypt_payload(&encrypted_file, &current_key)?;
 
     let new_salt = generate_random_bytes::<SALT_LENGTH>();
-    let new_key = derive_key(&new_master_password, &new_salt)?;
+    let new_key_result = derive_key(&new_master_password, &new_salt);
+    new_master_password.zeroize();
+    let new_key = new_key_result?;
     let updated_file = encrypt_payload(&payload, &new_key, &new_salt)?;
 
     write_vault_file(&app, &updated_file)?;
@@ -507,17 +558,142 @@ fn change_master_password(
     Ok(())
 }
 
+
+#[tauri::command]
+fn write_report_file(destination_path: String, content: String) -> Result<String, String> {
+    let mut destination = PathBuf::from(destination_path);
+
+    if destination.extension().is_none() {
+        destination.set_extension("json");
+    }
+
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Não foi possível criar a pasta do relatório: {error}"))?;
+    }
+
+    fs::write(&destination, content)
+        .map_err(|error| format!("Não foi possível salvar o relatório: {error}"))?;
+
+    Ok(destination.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn show_kpassword_notification(app: AppHandle, body: String) -> Result<(), String> {
+    show_tray_notification(&app, &body);
+    Ok(())
+}
+
+fn show_tray_notification(app: &AppHandle, body: &str) {
+    let _ = app
+        .notification()
+        .builder()
+        .title("KPassword")
+        .body(body)
+        .show();
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppUpdateInfo {
+    version: String,
+    current_version: String,
+    notes: Option<String>,
+}
+
+#[tauri::command]
+async fn check_kpassword_update(app: AppHandle) -> Result<Option<AppUpdateInfo>, String> {
+    let update = app
+        .updater()
+        .map_err(|error| format!("Falha ao iniciar o atualizador: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("Falha ao consultar a versão mais recente: {error}"))?;
+
+    Ok(update.map(|available| AppUpdateInfo {
+        version: available.version.clone(),
+        current_version: available.current_version.clone(),
+        notes: available.body.clone(),
+    }))
+}
+
+#[tauri::command]
+async fn install_kpassword_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|error| format!("Falha ao iniciar o atualizador: {error}"))?
+        .check()
+        .await
+        .map_err(|error| format!("Falha ao confirmar a atualização: {error}"))?
+        .ok_or_else(|| "Nenhuma atualização está disponível.".to_string())?;
+
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("Falha ao instalar a atualização: {error}"))?;
+
+    app.restart();
+
+    #[allow(unreachable_code)]
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .manage(VaultSession::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .setup(|app| {
+            let open_item = MenuItem::with_id(app, "open", "Abrir KPassword", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Encerrar KPassword", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+            let mut tray_builder = TrayIconBuilder::new()
+                .tooltip("KPassword")
+                .menu(&tray_menu)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "open" => show_main_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        show_main_window(app);
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            tray_builder.build(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let app = window.app_handle();
+                show_tray_notification(app, "O KPassword continua em execução na bandeja.");
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            export_backup_to_path,
-            import_backup_from_path,
-            change_master_password
             vault_exists,
             create_vault,
             unlock_vault,
@@ -527,7 +703,14 @@ pub fn run() {
             get_backup_dir,
             export_backup,
             import_latest_backup,
-            reset_vault
+            reset_vault,
+            export_backup_to_path,
+            import_backup_from_path,
+            change_master_password,
+            write_report_file,
+            show_kpassword_notification,
+            check_kpassword_update,
+            install_kpassword_update
         ])
         .run(tauri::generate_context!())
         .expect("Erro ao iniciar o KPassword");

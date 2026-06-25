@@ -1,7 +1,23 @@
-# Tauri + React + Typescript
+# KPassword
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+Cofre pessoal de credenciais para Windows. Os dados do cofre são criptografados e permanecem localmente no computador do usuário.
 
-## Recommended IDE Setup
+## Desenvolvimento local
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+```powershell
+npm.cmd install
+npm.cmd run tauri dev
+```
+
+## Atualizações
+
+O KPassword 0.3.0 usa o atualizador assinado do Tauri e consulta as releases deste repositório.
+
+Antes do primeiro build, execute uma única vez:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\CONFIGURAR-ATUALIZADOR.ps1
+```
+
+A chave privada gerada pelo script deve permanecer fora do repositório e ser guardada com segurança.
+
