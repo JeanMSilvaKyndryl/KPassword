@@ -1673,7 +1673,7 @@ export default function App() {
               </div>
 
               <div className="settings-grid">
-                <section className="settings-section">
+                <section className="settings-section security-settings-section">
                   <h3>Segurança</h3>
 
                   <label>
@@ -1709,33 +1709,13 @@ export default function App() {
                   <button type="button" className="primary-button" onClick={handleSaveSecurityPreferences}>Salvar segurança</button>
                 </section>
 
-                <section className="settings-section">
+                <section className="settings-section backup-settings-section">
                   <h3>Backup e relatórios</h3>
                   <button type="button" className="ghost-button" onClick={handleExportBackupToFile}>Exportar backup</button>
                   <button type="button" className="ghost-button" onClick={handleImportBackupFromFile}>Importar backup .kpass</button>
                   <button type="button" className="ghost-button" onClick={handleExportReport}>Exportar relatório sem senhas</button>
                   <button type="button" className="ghost-button" onClick={handleCopyVaultPath}>Copiar caminho do cofre</button>
                   <p className="settings-hint">Alterações no cofre tentam gerar backup interno automaticamente antes de salvar.</p>
-
-                  <div className="update-box">
-                    <div>
-                      <strong>Atualizações do KPassword</strong>
-                      <span>Versão instalada: {APP_VERSION}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      onClick={handleCheckForUpdates}
-                      disabled={isCheckingUpdate || isInstallingUpdate}
-                    >
-                      {isInstallingUpdate
-                        ? "Instalando..."
-                        : isCheckingUpdate
-                          ? "Verificando..."
-                          : "Verificar atualizações"}
-                    </button>
-                    {updateMessage && <p>{updateMessage}</p>}
-                  </div>
                 </section>
 
                 <section className="settings-section master-section">
@@ -1777,6 +1757,31 @@ export default function App() {
                   </label>
 
                   <button type="button" className="danger-sidebar-button" disabled={resetConfirmation !== "RESETAR"} onClick={handleResetVault}>Resetar cofre local</button>
+                </section>
+
+                <section className="settings-section updates-settings-section">
+                  <div className="update-heading">
+                    <div>
+                      <h3>Atualizações do KPassword</h3>
+                      <p>Baixe somente versões publicadas e validadas pela assinatura do aplicativo.</p>
+                    </div>
+                    <span>Versão instalada: {APP_VERSION}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="ghost-button update-check-button"
+                    onClick={handleCheckForUpdates}
+                    disabled={isCheckingUpdate || isInstallingUpdate}
+                  >
+                    {isInstallingUpdate
+                      ? "Instalando..."
+                      : isCheckingUpdate
+                        ? "Verificando..."
+                        : "Verificar atualizações"}
+                  </button>
+
+                  {updateMessage && <p className="update-message">{updateMessage}</p>}
                 </section>
 
               </div>

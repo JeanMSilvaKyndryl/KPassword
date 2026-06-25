@@ -1728,34 +1728,6 @@ button:active {
   font-size: 11px;
 }
 
-.update-box {
-  display: grid;
-  gap: 8px;
-  margin-top: 2px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.update-box > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.update-box strong {
-  color: #e2e8f0;
-  font-size: 13px;
-}
-
-.update-box span,
-.update-box p {
-  margin: 0;
-  color: #94a3b8;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
 .master-password-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -1882,6 +1854,87 @@ button:active {
   .settings-hint,
   .about-inline {
     display: none;
+  }
+}
+
+/* Configurações: grade definitiva orientada pelo conteúdo */
+.settings-modal {
+  min-height: 0;
+}
+
+.settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: none;
+  grid-auto-flow: row;
+  grid-auto-rows: max-content;
+  align-items: start;
+  align-content: start;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.settings-grid > .settings-section {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  align-self: start;
+  box-sizing: border-box;
+}
+
+.updates-settings-section {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  align-items: center;
+  gap: 12px 18px;
+}
+
+.update-heading {
+  min-width: 0;
+}
+
+.update-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.update-heading h3,
+.update-heading p,
+.update-message {
+  margin: 0;
+}
+
+.update-heading p,
+.update-heading > span,
+.update-message {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.update-heading > span {
+  display: block;
+  margin-top: 7px;
+}
+
+.update-check-button {
+  width: 100%;
+}
+
+.update-message {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 980px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .updates-settings-section {
+    grid-column: auto;
+    grid-template-columns: 1fr;
   }
 }
 
