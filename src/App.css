@@ -466,6 +466,24 @@ button:active {
 
 .button-icon {
   flex: 0 0 auto;
+  position: relative;
+}
+
+.sidebar-actions .ghost-button.has-update {
+  border-color: rgba(96, 165, 250, 0.34);
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.update-available-dot {
+  position: absolute;
+  top: -3px;
+  right: -6px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #0f172a;
+  border-radius: 999px;
+  background: #60a5fa;
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.8);
 }
 
 .sidebar-collapsed .sidebar {

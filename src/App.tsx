@@ -65,7 +65,10 @@ type PasswordStrength = {
 const DEFAULT_AUTO_LOCK_MINUTES = 3;
 const DEFAULT_CLIPBOARD_CLEAR_SECONDS = 30;
 const SECURITY_DEFAULTS_VERSION = "0.2.2";
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.3.1";
+const AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const AUTO_UPDATE_CHECK_ENABLED_KEY = "kpassword:auto-update-check-enabled";
+const LAST_UPDATE_CHECK_KEY = "kpassword:last-update-check-at";
 const MASKED_PASSWORD = "••••••••••••";
 
 const emptyForm: VaultFormState = {
@@ -97,6 +100,18 @@ function readBooleanPreference(key: string, fallback: boolean) {
   if (value === "true") return true;
   if (value === "false") return false;
   return fallback;
+}
+
+function formatLastUpdateCheck(value: string) {
+  if (!value) return "Nunca";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Nunca";
+
+  return date.toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }
 
 function createId() {
@@ -380,6 +395,13 @@ export default function App() {
   const [updateMessage, setUpdateMessage] = useState("");
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(null);
+  const [automaticUpdateChecksEnabled, setAutomaticUpdateChecksEnabled] = useState(() =>
+    readBooleanPreference(AUTO_UPDATE_CHECK_ENABLED_KEY, true),
+  );
+  const [lastUpdateCheckAt, setLastUpdateCheckAt] = useState(() =>
+    localStorage.getItem(LAST_UPDATE_CHECK_KEY) ?? "",
+  );
   const [autoLockMinutes, setAutoLockMinutes] = useState(() =>
     readNumberPreference(
       "kpassword:auto-lock-minutes",
@@ -410,6 +432,38 @@ export default function App() {
 
   const [activityVersion, setActivityVersion] = useState(0);
 
+  function registerSuccessfulUpdateCheck() {
+    const checkedAt = new Date().toISOString();
+    localStorage.setItem(LAST_UPDATE_CHECK_KEY, checkedAt);
+    setLastUpdateCheckAt(checkedAt);
+  }
+
+  async function confirmAndInstallUpdate(update: AppUpdateInfo) {
+    const notes = update.notes?.trim();
+    const confirmation = window.confirm(
+      `KPassword ${update.version} disponível.\n\n${notes || "Uma nova versão está pronta para instalação."}\n\nDeseja baixar e instalar agora?`,
+    );
+
+    if (!confirmation) {
+      setUpdateMessage(`A versão ${update.version} continua disponível para instalar.`);
+      return;
+    }
+
+    setAppError("");
+    setIsInstallingUpdate(true);
+    setUpdateMessage("Baixando e validando a atualização assinada...");
+
+    try {
+      await invoke("install_kpassword_update");
+      setUpdateMessage("Atualização instalada. Reiniciando o KPassword...");
+    } catch (error) {
+      setAppError(`Não foi possível instalar a atualização: ${String(error)}`);
+      setUpdateMessage(`A versão ${update.version} continua disponível.`);
+    } finally {
+      setIsInstallingUpdate(false);
+    }
+  }
+
   async function handleCheckForUpdates() {
     setAppError("");
     setUpdateMessage("Verificando atualizações...");
@@ -417,34 +471,21 @@ export default function App() {
 
     try {
       const update = await invoke<AppUpdateInfo | null>("check_kpassword_update");
+      registerSuccessfulUpdateCheck();
+      setAvailableUpdate(update);
 
       if (!update) {
         setUpdateMessage(`O KPassword ${APP_VERSION} já está atualizado.`);
         return;
       }
 
-      const notes = update.notes?.trim();
-      const confirmation = window.confirm(
-        `KPassword ${update.version} disponível.\n\n${notes || "Uma nova versão está pronta para instalação."}\n\nDeseja baixar e instalar agora?`,
-      );
-
-      if (!confirmation) {
-        setUpdateMessage(`A versão ${update.version} está disponível para instalar.`);
-        return;
-      }
-
-      setIsInstallingUpdate(true);
-      setUpdateMessage("Baixando e validando a atualização assinada...");
-      await invoke("install_kpassword_update");
-      setUpdateMessage("Atualização instalada. Reiniciando o KPassword...");
+      setUpdateMessage(`A versão ${update.version} está disponível.`);
+      await confirmAndInstallUpdate(update);
     } catch (error) {
       setUpdateMessage("");
-      setAppError(
-        `Não foi possível verificar ou instalar a atualização: ${String(error)}`,
-      );
+      setAppError(`Não foi possível verificar atualizações: ${String(error)}`);
     } finally {
       setIsCheckingUpdate(false);
-      setIsInstallingUpdate(false);
     }
   }
 
@@ -461,6 +502,44 @@ export default function App() {
       setPrivacyMode(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (isCheckingVault || !automaticUpdateChecksEnabled) return;
+
+    const previousCheck = Date.parse(lastUpdateCheckAt);
+    const checkedRecently = Number.isFinite(previousCheck)
+      && Date.now() - previousCheck < AUTO_UPDATE_CHECK_INTERVAL_MS;
+
+    if (checkedRecently) return;
+
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const update = await invoke<AppUpdateInfo | null>("check_kpassword_update");
+          if (cancelled) return;
+
+          registerSuccessfulUpdateCheck();
+          setAvailableUpdate(update);
+
+          if (update) {
+            setUpdateMessage(`A versão ${update.version} está disponível para instalar.`);
+            void showKPasswordNotification(
+              `A versão ${update.version} está disponível. Abra as Configurações para instalar.`,
+              false,
+            );
+          }
+        } catch {
+          // A verificação automática é silenciosa. A verificação manual continua disponível.
+        }
+      })();
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [isCheckingVault, automaticUpdateChecksEnabled, lastUpdateCheckAt]);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -680,6 +759,10 @@ export default function App() {
     );
     localStorage.setItem("kpassword:security-sound-enabled", String(soundEnabled));
     localStorage.setItem("kpassword:privacy-mode", String(privacyMode));
+    localStorage.setItem(
+      AUTO_UPDATE_CHECK_ENABLED_KEY,
+      String(automaticUpdateChecksEnabled),
+    );
     setSettingsMessage("Configurações de segurança salvas.");
     setAppError("");
   }
@@ -1325,7 +1408,7 @@ export default function App() {
 
             <button
               type="button"
-              className="ghost-button"
+              className={`ghost-button ${availableUpdate ? "has-update" : ""}`}
               onClick={() => {
                 setSettingsMessage("");
                 setAppError("");
@@ -1333,7 +1416,10 @@ export default function App() {
               }}
               title="Configurações"
             >
-              <span className="button-icon">⚙</span>
+              <span className="button-icon">
+                ⚙
+                {availableUpdate && <span className="update-available-dot" />}
+              </span>
               <span className="sidebar-action-label">Configurações</span>
             </button>
 
@@ -1704,6 +1790,15 @@ export default function App() {
                     Modo privacidade: ocultar senhas ao perder foco
                   </label>
 
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={automaticUpdateChecksEnabled}
+                      onChange={(event) => setAutomaticUpdateChecksEnabled(event.target.checked)}
+                    />
+                    Verificar atualizações automaticamente
+                  </label>
+
                   <p className="settings-hint">Senhas exibidas voltam a ficar ocultas automaticamente.</p>
 
                   <button type="button" className="primary-button" onClick={handleSaveSecurityPreferences}>Salvar segurança</button>
@@ -1765,20 +1860,31 @@ export default function App() {
                       <h3>Atualizações do KPassword</h3>
                       <p>Baixe somente versões publicadas e validadas pela assinatura do aplicativo.</p>
                     </div>
-                    <span>Versão instalada: {APP_VERSION}</span>
+                    <span>
+                      Versão instalada: {APP_VERSION} • Última verificação: {formatLastUpdateCheck(lastUpdateCheckAt)}
+                    </span>
                   </div>
 
                   <button
                     type="button"
                     className="ghost-button update-check-button"
-                    onClick={handleCheckForUpdates}
+                    onClick={() => {
+                      if (availableUpdate) {
+                        void confirmAndInstallUpdate(availableUpdate);
+                        return;
+                      }
+
+                      void handleCheckForUpdates();
+                    }}
                     disabled={isCheckingUpdate || isInstallingUpdate}
                   >
                     {isInstallingUpdate
                       ? "Instalando..."
                       : isCheckingUpdate
                         ? "Verificando..."
-                        : "Verificar atualizações"}
+                        : availableUpdate
+                          ? `Instalar versão ${availableUpdate.version}`
+                          : "Verificar atualizações"}
                   </button>
 
                   {updateMessage && <p className="update-message">{updateMessage}</p>}
