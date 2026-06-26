@@ -12,7 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, State,
+    AppHandle, Emitter, Manager, State,
 };
 use zeroize::Zeroize;
 use tauri_plugin_notification::NotificationExt;
@@ -133,6 +133,115 @@ fn backup_file_name() -> Result<String, String> {
     Ok(format!("kpassword-backup-{timestamp}.kpass"))
 }
 
+fn kpass_file_is_structurally_valid(path: &PathBuf) -> bool {
+    if !path.exists() || !path.is_file() {
+        return false;
+    }
+
+    let Ok(content) = fs::read_to_string(path) else {
+        return false;
+    };
+
+    let Ok(file) = serde_json::from_str::<EncryptedVaultFile>(&content) else {
+        return false;
+    };
+
+    file.version == VAULT_VERSION
+        && file.cipher == "aes-256-gcm"
+        && !file.salt.trim().is_empty()
+        && !file.nonce.trim().is_empty()
+        && !file.data.trim().is_empty()
+}
+
+fn collect_kpass_files_from_dir(dir: PathBuf, paths: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_kpass = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.eq_ignore_ascii_case("kpass"))
+            .unwrap_or(false);
+
+        if is_kpass {
+            paths.push(path);
+        }
+    }
+}
+
+fn legacy_kpass_candidates(app: &AppHandle) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    if let Ok(current_dir) = app_data_dir(app) {
+        collect_kpass_files_from_dir(current_dir.join(BACKUP_DIR_NAME), &mut paths);
+    }
+
+    if let Some(app_data) = std::env::var_os("APPDATA") {
+        let legacy_dir = PathBuf::from(app_data).join("KPassword");
+        paths.push(legacy_dir.join(VAULT_FILE_NAME));
+        collect_kpass_files_from_dir(legacy_dir.join(BACKUP_DIR_NAME), &mut paths);
+    }
+
+    paths
+}
+
+fn migrate_legacy_vault_if_needed(app: &AppHandle) -> Result<Option<String>, String> {
+    let active_vault = vault_path(app)?;
+    let active_len = active_vault.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+    let active_is_valid = kpass_file_is_structurally_valid(&active_vault);
+
+    let mut candidates = legacy_kpass_candidates(app)
+        .into_iter()
+        .filter(|path| path != &active_vault)
+        .filter(|path| kpass_file_is_structurally_valid(path))
+        .filter_map(|path| {
+            let metadata = path.metadata().ok()?;
+            let len = metadata.len();
+            let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+            Some((path, len, modified))
+        })
+        .collect::<Vec<_>>();
+
+    candidates.sort_by(|left, right| right.2.cmp(&left.2).then_with(|| right.1.cmp(&left.1)));
+
+    let Some((candidate, candidate_len, _)) = candidates.into_iter().next() else {
+        return Ok(None);
+    };
+
+    let should_migrate = !active_vault.exists()
+        || !active_is_valid
+        || (active_len < 400 && candidate_len > active_len);
+
+    if !should_migrate {
+        return Ok(None);
+    }
+
+    let migration_dir = app_data_dir(app)?.join("migration-backups");
+    fs::create_dir_all(&migration_dir)
+        .map_err(|error| format!("Não foi possível criar backup de migração: {error}"))?;
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("Erro ao registrar migração: {error}"))?
+        .as_secs();
+
+    if active_vault.exists() {
+        let before_path = migration_dir.join(format!("vault-before-migration-{timestamp}.kpass"));
+        let _ = fs::copy(&active_vault, before_path);
+    }
+
+    let migrated_copy = migration_dir.join(format!("vault-migrated-from-legacy-{timestamp}.kpass"));
+    let _ = fs::copy(&candidate, &migrated_copy);
+
+    fs::copy(&candidate, &active_vault)
+        .map_err(|error| format!("Não foi possível migrar o cofre antigo: {error}"))?;
+
+    Ok(Some(candidate.to_string_lossy().to_string()))
+}
+
 fn generate_random_bytes<const N: usize>() -> [u8; N] {
     let mut bytes = [0u8; N];
     OsRng.fill_bytes(&mut bytes);
@@ -221,6 +330,7 @@ fn decrypt_payload(file: &EncryptedVaultFile, key: &[u8; KEY_LENGTH]) -> Result<
 }
 
 fn read_vault_file(app: &AppHandle) -> Result<EncryptedVaultFile, String> {
+    let _ = migrate_legacy_vault_if_needed(app);
     let path = vault_path(app)?;
 
     let content = fs::read_to_string(&path)
@@ -251,7 +361,7 @@ fn write_vault_file(app: &AppHandle, file: &EncryptedVaultFile) -> Result<(), St
         .map_err(|error| format!("Não foi possível salvar o cofre: {error}"))
 }
 
-fn clear_session(session: State<VaultSession>) -> Result<(), String> {
+fn clear_session_state(session: &VaultSession) -> Result<(), String> {
     let mut guard = session
         .key
         .lock()
@@ -264,8 +374,13 @@ fn clear_session(session: State<VaultSession>) -> Result<(), String> {
     Ok(())
 }
 
+fn clear_session(session: State<VaultSession>) -> Result<(), String> {
+    clear_session_state(&session)
+}
+
 #[tauri::command]
 fn vault_exists(app: AppHandle) -> Result<bool, String> {
+    let _ = migrate_legacy_vault_if_needed(&app);
     Ok(vault_path(&app)?.exists())
 }
 
@@ -578,6 +693,32 @@ fn write_report_file(destination_path: String, content: String) -> Result<String
     Ok(destination.to_string_lossy().to_string())
 }
 
+#[cfg(target_os = "windows")]
+fn play_native_notification_sound() {
+    use std::os::windows::process::CommandExt;
+
+    let _ = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            "[System.Media.SystemSounds]::Asterisk.Play()",
+        ])
+        .creation_flags(0x08000000)
+        .spawn();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn play_native_notification_sound() {}
+
+#[tauri::command]
+fn play_kpassword_notification_sound() -> Result<(), String> {
+    play_native_notification_sound();
+    Ok(())
+}
+
 #[tauri::command]
 fn show_kpassword_notification(app: AppHandle, body: String) -> Result<(), String> {
     show_tray_notification(&app, &body);
@@ -600,6 +741,54 @@ fn show_main_window(app: &AppHandle) {
         let _ = window.set_focus();
     }
 }
+
+#[cfg(target_os = "windows")]
+fn windows_session_appears_locked() -> bool {
+    use windows_sys::Win32::System::StationsAndDesktops::{
+        CloseDesktop, OpenInputDesktop, SwitchDesktop, DESKTOP_SWITCHDESKTOP,
+    };
+
+    unsafe {
+        let desktop = OpenInputDesktop(0, 0, DESKTOP_SWITCHDESKTOP);
+
+        if desktop.is_null() {
+            return true;
+        }
+
+        let can_switch = SwitchDesktop(desktop) != 0;
+        let _ = CloseDesktop(desktop);
+
+        !can_switch
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn start_windows_session_watch(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut was_locked = false;
+
+        loop {
+            let is_locked = windows_session_appears_locked();
+
+            if is_locked && !was_locked {
+                let session = app.state::<VaultSession>();
+                let _ = clear_session_state(&session);
+
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+
+                let _ = app.emit("kpassword-system-lock", ());
+            }
+
+            was_locked = is_locked;
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+fn start_windows_session_watch(_app: AppHandle) {}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -655,6 +844,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            start_windows_session_watch(app.handle().clone());
+
             let open_item = MenuItem::with_id(app, "open", "Abrir KPassword", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Encerrar KPassword", true, None::<&str>)?;
             let tray_menu = Menu::with_items(app, &[&open_item, &quit_item])?;
@@ -709,6 +900,7 @@ pub fn run() {
             change_master_password,
             write_report_file,
             show_kpassword_notification,
+            play_kpassword_notification_sound,
             check_kpassword_update,
             install_kpassword_update
         ])

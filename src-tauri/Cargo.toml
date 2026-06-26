@@ -1,6 +1,6 @@
 [package]
 name = "kpassword"
-version = "0.3.1"
+version = "0.4.5"
 description = "KPassword - cofre local de senhas"
 authors = ["Jean Silva"]
 edition = "2021"
@@ -30,3 +30,5 @@ zeroize = "1"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2.10.0"
+
+windows-sys = { version = "0.61", features = ["Win32_System_StationsAndDesktops", "Win32_UI_WindowsAndMessaging"] }

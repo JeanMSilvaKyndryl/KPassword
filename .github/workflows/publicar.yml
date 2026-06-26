@@ -39,7 +39,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: KPassword v__VERSION__
-          releaseBody: Verificacao automatica de atualizacoes, aviso discreto e melhorias de confiabilidade.
+          releaseBody: Central de seguranca, temas, bloqueio ao suspender/bloquear Windows e revisao de desempenho.
           releaseDraft: false
           prerelease: false
           args: --bundles nsis

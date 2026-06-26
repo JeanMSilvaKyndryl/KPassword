@@ -1,5 +1,6 @@
 import { FormEvent, MouseEvent, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import appIcon from "./assets/app-icon.png";
@@ -56,6 +57,24 @@ type ChangeMasterForm = {
   confirmationText: string;
 };
 
+type ThemeMode = "dark" | "light" | "mixed" | "system";
+type AccentColor = "blue" | "purple" | "green" | "red" | "slate";
+
+const THEME_OPTIONS: Array<{ value: ThemeMode; label: string }> = [
+  { value: "dark", label: "Escuro" },
+  { value: "light", label: "Claro" },
+  { value: "mixed", label: "Mesclado" },
+  { value: "system", label: "Sistema" },
+];
+
+const ACCENT_OPTIONS: Array<{ value: AccentColor; label: string }> = [
+  { value: "blue", label: "Azul" },
+  { value: "purple", label: "Roxo" },
+  { value: "green", label: "Verde" },
+  { value: "red", label: "Vermelho" },
+  { value: "slate", label: "Cinza" },
+];
+
 type PasswordStrength = {
   label: string;
   score: number;
@@ -64,8 +83,8 @@ type PasswordStrength = {
 
 const DEFAULT_AUTO_LOCK_MINUTES = 3;
 const DEFAULT_CLIPBOARD_CLEAR_SECONDS = 30;
-const SECURITY_DEFAULTS_VERSION = "0.2.2";
-const APP_VERSION = "0.3.1";
+const SECURITY_DEFAULTS_VERSION = "0.4.0";
+const APP_VERSION = "0.4.0";
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const AUTO_UPDATE_CHECK_ENABLED_KEY = "kpassword:auto-update-check-enabled";
 const LAST_UPDATE_CHECK_KEY = "kpassword:last-update-check-at";
@@ -100,6 +119,26 @@ function readBooleanPreference(key: string, fallback: boolean) {
   if (value === "true") return true;
   if (value === "false") return false;
   return fallback;
+}
+
+function readThemePreference(): ThemeMode {
+  const value = localStorage.getItem("kpassword:theme-mode");
+  return value === "dark" || value === "light" || value === "mixed" || value === "system"
+    ? value
+    : "dark";
+}
+
+function readAccentPreference(): AccentColor {
+  const value = localStorage.getItem("kpassword:accent-color");
+  return value === "blue" || value === "purple" || value === "green" || value === "red" || value === "slate"
+    ? value
+    : "blue";
+}
+
+function resolveTheme(themeMode: ThemeMode) {
+  if (themeMode !== "system") return themeMode;
+
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
 
 function formatLastUpdateCheck(value: string) {
@@ -276,32 +315,9 @@ async function playSecuritySound() {
   if (!readBooleanPreference("kpassword:security-sound-enabled", true)) return;
 
   try {
-    const AudioContextClass = window.AudioContext ||
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-
-    if (!AudioContextClass) return;
-
-    const context = new AudioContextClass();
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(880, context.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(660, context.currentTime + 0.12);
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
-
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.2);
-
-    window.setTimeout(() => {
-      void context.close();
-    }, 260);
+    await invoke("play_kpassword_notification_sound");
   } catch {
-    // O som é uma camada de alerta. Se o Windows ou o WebView bloquear, a segurança segue funcionando.
+    // O som é uma camada de alerta. Se o Windows bloquear, a segurança segue funcionando.
   }
 }
 
@@ -420,6 +436,13 @@ export default function App() {
   const [privacyMode, setPrivacyMode] = useState(() =>
     readBooleanPreference("kpassword:privacy-mode", true),
   );
+  const [lockWhenSystemHides, setLockWhenSystemHides] = useState(() =>
+    readBooleanPreference("kpassword:lock-when-system-hides", true),
+  );
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readThemePreference());
+  const [resolvedTheme, setResolvedTheme] = useState(() => resolveTheme(readThemePreference()));
+  const [accentColor, setAccentColor] = useState<AccentColor>(() => readAccentPreference());
+  const [isSecurityCenterOpen, setIsSecurityCenterOpen] = useState(false);
   const [changeMasterForm, setChangeMasterForm] = useState<ChangeMasterForm>(
     emptyChangeMasterForm,
   );
@@ -496,12 +519,26 @@ export default function App() {
       localStorage.setItem("kpassword:auto-lock-minutes", String(DEFAULT_AUTO_LOCK_MINUTES));
       localStorage.setItem("kpassword:security-sound-enabled", "true");
       localStorage.setItem("kpassword:privacy-mode", "true");
+      localStorage.setItem("kpassword:lock-when-system-hides", "true");
       localStorage.setItem(versionKey, SECURITY_DEFAULTS_VERSION);
       setAutoLockMinutes(DEFAULT_AUTO_LOCK_MINUTES);
       setSoundEnabled(true);
       setPrivacyMode(true);
+      setLockWhenSystemHides(true);
     }
   }, []);
+
+  useEffect(() => {
+    setResolvedTheme(resolveTheme(themeMode));
+
+    if (themeMode !== "system") return;
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => setResolvedTheme(resolveTheme("system"));
+    mediaQuery.addEventListener("change", onChange);
+
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }, [themeMode]);
 
   useEffect(() => {
     if (isCheckingVault || !automaticUpdateChecksEnabled) return;
@@ -586,6 +623,21 @@ export default function App() {
     ];
   }, [items]);
 
+  const securitySummary = useMemo(() => {
+    const missingExpiration = maintenanceItems.filter((entry) => entry.status.tone === "neutral").length;
+    const issues = weakPasswordCount + duplicatePasswordCount + expiredCredentialCount + expiringCredentialCount;
+
+    return {
+      issues,
+      missingExpiration,
+      uniqueCategories: Math.max(categories.length - 1, 0),
+      statusLabel: issues === 0 ? "Em dia" : issues <= 2 ? "Atenção" : "Revisar",
+      statusDescription: issues === 0
+        ? "Nenhum alerta crítico encontrado no cofre atual."
+        : "Existem pontos de segurança ou manutenção para revisar.",
+    };
+  }, [categories.length, duplicatePasswordCount, expiredCredentialCount, expiringCredentialCount, maintenanceItems, weakPasswordCount]);
+
   useEffect(() => {
     async function initializeVaultStatus() {
       try {
@@ -615,6 +667,39 @@ export default function App() {
     return () => window.removeEventListener("blur", onBlur);
   }, [privacyMode]);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void listen("kpassword-system-lock", async () => {
+      if (!isUnlocked || !lockWhenSystemHides) return;
+
+      await clearUnlockedState(false);
+      void showKPasswordNotification(
+        "O cofre foi bloqueado por alteração de sessão, suspensão ou bloqueio do Windows.",
+      );
+    }).then((handler) => {
+      unlisten = handler;
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [isUnlocked, lockWhenSystemHides]);
+
+  useEffect(() => {
+    if (!lockWhenSystemHides || !isUnlocked) return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") return;
+
+      void lockAndHideDueToSystemChange();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [isUnlocked, lockWhenSystemHides]);
+
   async function clearUnlockedState(lockRustSession: boolean) {
     if (lockRustSession) {
       try {
@@ -634,6 +719,7 @@ export default function App() {
     setSelectedItemId(null);
     setIsSettingsOpen(false);
     setIsMaintenanceOpen(false);
+    setIsSecurityCenterOpen(false);
     setCopiedMessage("");
     setSettingsMessage("");
     setItems([]);
@@ -665,6 +751,14 @@ export default function App() {
     await appWindow.hide();
     void showKPasswordNotification(
       "O cofre foi bloqueado por inatividade e enviado para a bandeja.",
+    );
+  }
+
+  async function lockAndHideDueToSystemChange() {
+    await clearUnlockedState(true);
+    await appWindow.hide();
+    void showKPasswordNotification(
+      "O cofre foi bloqueado por segurança e enviado para a bandeja.",
     );
   }
 
@@ -759,11 +853,14 @@ export default function App() {
     );
     localStorage.setItem("kpassword:security-sound-enabled", String(soundEnabled));
     localStorage.setItem("kpassword:privacy-mode", String(privacyMode));
+    localStorage.setItem("kpassword:lock-when-system-hides", String(lockWhenSystemHides));
+    localStorage.setItem("kpassword:theme-mode", themeMode);
+    localStorage.setItem("kpassword:accent-color", accentColor);
     localStorage.setItem(
       AUTO_UPDATE_CHECK_ENABLED_KEY,
       String(automaticUpdateChecksEnabled),
     );
-    setSettingsMessage("Configurações de segurança salvas.");
+    setSettingsMessage("Preferências salvas.");
     setAppError("");
   }
 
@@ -1207,7 +1304,7 @@ export default function App() {
   }
 
   const frame = (content: React.ReactNode) => (
-    <div className="app-frame">
+    <div className="app-frame" data-theme={resolvedTheme} data-accent={accentColor}>
       <AppTitlebar onCloseToTray={handleCloseToTray} />
       {content}
     </div>
@@ -1332,7 +1429,7 @@ export default function App() {
   const formStrength = getPasswordStrength(form.password);
 
   return (
-    <div className="app-frame">
+    <div className="app-frame" data-theme={resolvedTheme} data-accent={accentColor}>
       <AppTitlebar onCloseToTray={handleCloseToTray} />
 
       <main className={`app-shell ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
@@ -1351,15 +1448,6 @@ export default function App() {
               <span>Cofre local</span>
             </div>
           </div>
-
-          <button
-            type="button"
-            className="sidebar-toggle-button"
-            onClick={() => setIsSidebarCollapsed((current) => !current)}
-            title={isSidebarCollapsed ? "Mostrar menu" : "Ocultar menu"}
-          >
-            {isSidebarCollapsed ? "›" : "‹"}
-          </button>
 
           <div className="sidebar-metrics">
             <div className="sidebar-panel">
@@ -1398,12 +1486,12 @@ export default function App() {
               className="ghost-button"
               onClick={() => {
                 setAppError("");
-                setIsMaintenanceOpen(true);
+                setIsSecurityCenterOpen(true);
               }}
-              title="Manutenção de credenciais"
+              title="Central de Segurança"
             >
-              <span className="button-icon">⏱</span>
-              <span className="sidebar-action-label">Manutenção</span>
+              <span className="button-icon">🛡</span>
+              <span className="sidebar-action-label">Central</span>
             </button>
 
             <button
@@ -1697,6 +1785,74 @@ export default function App() {
         )}
 
 
+        {isSecurityCenterOpen && (
+          <div className="modal-backdrop security-center-backdrop">
+            <section className="modal security-center-modal">
+              <div className="modal-header">
+                <div>
+                  <p className="eyebrow">Segurança</p>
+                  <h2>Central de Segurança</h2>
+                </div>
+
+                <button type="button" className="icon-button" onClick={() => setIsSecurityCenterOpen(false)}>×</button>
+              </div>
+
+              <div className="security-overview-card">
+                <div>
+                  <span>Status geral</span>
+                  <strong>{securitySummary.statusLabel}</strong>
+                  <p>{securitySummary.statusDescription}</p>
+                </div>
+                <button type="button" className="primary-button" onClick={() => { setShowOnlyWeak(true); setShowOnlyDuplicates(true); setIsSecurityCenterOpen(false); }}>Ver credenciais críticas</button>
+              </div>
+
+              <div className="security-grid">
+                <article className="security-card">
+                  <span>Senhas fracas</span>
+                  <strong>{weakPasswordCount}</strong>
+                  <p>Use o filtro de busca avançada para localizar e trocar.</p>
+                </article>
+
+                <article className="security-card">
+                  <span>Senhas repetidas</span>
+                  <strong>{duplicatePasswordCount}</strong>
+                  <p>Evite usar a mesma senha em mais de um sistema.</p>
+                </article>
+
+                <article className="security-card">
+                  <span>Expiradas</span>
+                  <strong>{expiredCredentialCount}</strong>
+                  <p>Credenciais que já passaram do prazo configurado.</p>
+                </article>
+
+                <article className="security-card">
+                  <span>Para expirar</span>
+                  <strong>{expiringCredentialCount}</strong>
+                  <p>Senhas que vencem nos próximos 7 dias.</p>
+                </article>
+
+                <article className="security-card">
+                  <span>Sem vencimento</span>
+                  <strong>{securitySummary.missingExpiration}</strong>
+                  <p>Credenciais sem prazo de troca definido.</p>
+                </article>
+
+                <article className="security-card">
+                  <span>Atualizações</span>
+                  <strong>{availableUpdate ? `v${availableUpdate.version}` : "OK"}</strong>
+                  <p>Última verificação: {formatLastUpdateCheck(lastUpdateCheckAt)}.</p>
+                </article>
+              </div>
+
+              <div className="security-actions-row">
+                <button type="button" className="ghost-button" onClick={() => { setShowOnlyWeak(true); setIsSecurityCenterOpen(false); }}>Ver senhas fracas</button>
+                <button type="button" className="ghost-button" onClick={() => { setShowOnlyDuplicates(true); setIsSecurityCenterOpen(false); }}>Ver repetidas</button>
+                <button type="button" className="ghost-button" onClick={() => { void handleCheckForUpdates(); }}>Verificar atualizações</button>
+              </div>
+            </section>
+          </div>
+        )}
+
         {isMaintenanceOpen && (
           <div className="modal-backdrop maintenance-backdrop">
             <section className="modal maintenance-modal">
@@ -1791,6 +1947,11 @@ export default function App() {
                   </label>
 
                   <label className="checkbox-label">
+                    <input type="checkbox" checked={lockWhenSystemHides} onChange={(event) => setLockWhenSystemHides(event.target.checked)} />
+                    Bloquear ao ocultar, suspender ou bloquear o Windows
+                  </label>
+
+                  <label className="checkbox-label">
                     <input
                       type="checkbox"
                       checked={automaticUpdateChecksEnabled}
@@ -1802,6 +1963,40 @@ export default function App() {
                   <p className="settings-hint">Senhas exibidas voltam a ficar ocultas automaticamente.</p>
 
                   <button type="button" className="primary-button" onClick={handleSaveSecurityPreferences}>Salvar segurança</button>
+                </section>
+
+                <section className="settings-section appearance-settings-section">
+                  <h3>Aparência</h3>
+
+                  <label>
+                    Tema
+                    <select value={themeMode} onChange={(event) => setThemeMode(event.target.value as ThemeMode)}>
+                      {THEME_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Cor principal
+                    <select value={accentColor} onChange={(event) => setAccentColor(event.target.value as AccentColor)}>
+                      {ACCENT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="accent-preview-row">
+                    {ACCENT_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`accent-preview accent-${option.value} ${accentColor === option.value ? "active" : ""}`}
+                        onClick={() => setAccentColor(option.value)}
+                        title={option.label}
+                      />
+                    ))}
+                  </div>
                 </section>
 
                 <section className="settings-section backup-settings-section">

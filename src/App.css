@@ -2190,3 +2190,594 @@ button:active {
     padding: 10px;
   }
 }
+
+/* KPassword 0.4.0 - design system, themes and responsive polish */
+.app-frame {
+  --kp-bg: #050816;
+  --kp-bg-soft: #0f172a;
+  --kp-panel: rgba(15, 23, 42, 0.82);
+  --kp-panel-strong: rgba(2, 6, 23, 0.82);
+  --kp-card: rgba(15, 23, 42, 0.72);
+  --kp-card-muted: rgba(2, 6, 23, 0.42);
+  --kp-input: rgba(15, 23, 42, 0.74);
+  --kp-text: #f8fafc;
+  --kp-muted: #94a3b8;
+  --kp-border: rgba(148, 163, 184, 0.17);
+  --kp-shadow: rgba(0, 0, 0, 0.32);
+  --kp-accent: #2563eb;
+  --kp-accent-strong: #7c3aed;
+  --kp-accent-soft: #60a5fa;
+  color: var(--kp-text);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--kp-accent) 24%, transparent), transparent 34%),
+    radial-gradient(circle at bottom right, color-mix(in srgb, var(--kp-accent-strong) 22%, transparent), transparent 30%),
+    var(--kp-bg);
+}
+
+.app-frame[data-theme="light"] {
+  --kp-bg: #eef2ff;
+  --kp-bg-soft: #ffffff;
+  --kp-panel: rgba(255, 255, 255, 0.86);
+  --kp-panel-strong: rgba(248, 250, 252, 0.92);
+  --kp-card: rgba(255, 255, 255, 0.9);
+  --kp-card-muted: rgba(241, 245, 249, 0.85);
+  --kp-input: rgba(255, 255, 255, 0.95);
+  --kp-text: #0f172a;
+  --kp-muted: #64748b;
+  --kp-border: rgba(15, 23, 42, 0.12);
+  --kp-shadow: rgba(15, 23, 42, 0.14);
+}
+
+.app-frame[data-theme="mixed"] {
+  --kp-bg: #0b1120;
+  --kp-bg-soft: #111827;
+  --kp-panel: rgba(15, 23, 42, 0.86);
+  --kp-panel-strong: rgba(2, 6, 23, 0.88);
+  --kp-card: rgba(30, 41, 59, 0.8);
+  --kp-card-muted: rgba(15, 23, 42, 0.5);
+  --kp-text: #f8fafc;
+  --kp-muted: #a7b4c8;
+}
+
+.app-frame[data-accent="purple"] {
+  --kp-accent: #7c3aed;
+  --kp-accent-strong: #a855f7;
+  --kp-accent-soft: #c084fc;
+}
+
+.app-frame[data-accent="green"] {
+  --kp-accent: #059669;
+  --kp-accent-strong: #10b981;
+  --kp-accent-soft: #34d399;
+}
+
+.app-frame[data-accent="red"] {
+  --kp-accent: #dc2626;
+  --kp-accent-strong: #f97316;
+  --kp-accent-soft: #fb7185;
+}
+
+.app-frame[data-accent="slate"] {
+  --kp-accent: #475569;
+  --kp-accent-strong: #0f172a;
+  --kp-accent-soft: #94a3b8;
+}
+
+.app-frame .app-titlebar,
+.app-frame .sidebar {
+  background: var(--kp-panel-strong);
+  border-color: var(--kp-border);
+}
+
+.app-frame .auth-card,
+.app-frame .modal,
+.app-frame .vault-row,
+.app-frame .settings-section,
+.app-frame .security-card,
+.app-frame .security-overview-card,
+.app-frame .detail-field,
+.app-frame .detail-card-block,
+.app-frame .history-box,
+.app-frame .maintenance-row,
+.app-frame .maintenance-summary div,
+.app-frame .sidebar-panel {
+  color: var(--kp-text);
+  border-color: var(--kp-border);
+  background: var(--kp-card);
+  box-shadow: 0 14px 40px var(--kp-shadow);
+}
+
+.app-frame .sidebar-warning,
+.app-frame .security-note,
+.app-frame .password-strength-card,
+.app-frame .advanced-search-panel {
+  border-color: var(--kp-border);
+  background: var(--kp-card-muted);
+}
+
+.app-frame input,
+.app-frame textarea,
+.app-frame select {
+  color: var(--kp-text);
+  background: var(--kp-input);
+  border-color: var(--kp-border);
+}
+
+.app-frame input::placeholder,
+.app-frame textarea::placeholder {
+  color: color-mix(in srgb, var(--kp-muted) 82%, transparent);
+}
+
+.app-frame .muted,
+.app-frame .sidebar-brand span,
+.app-frame .vault-row-main p,
+.app-frame .settings-hint,
+.app-frame .maintenance-row p,
+.app-frame .maintenance-status span,
+.app-frame .detail-field span,
+.app-frame .security-card p,
+.app-frame .security-overview-card p,
+.app-frame .update-heading p,
+.app-frame .about-inline {
+  color: var(--kp-muted);
+}
+
+.app-frame .eyebrow,
+.app-frame .copied-message,
+.app-frame .success-message {
+  color: var(--kp-accent-soft);
+}
+
+.app-frame .primary-button,
+.app-frame .brand-mark,
+.app-frame .titlebar-logo {
+  background: linear-gradient(135deg, var(--kp-accent), var(--kp-accent-strong));
+}
+
+.app-frame .ghost-button.has-update,
+.app-frame .category-filter-list button.active,
+.app-frame .advanced-search-panel button.active,
+.app-frame .filter-button:hover {
+  border-color: color-mix(in srgb, var(--kp-accent) 44%, transparent);
+  background: color-mix(in srgb, var(--kp-accent) 18%, transparent);
+  color: var(--kp-text);
+}
+
+.settings-modal {
+  width: min(1080px, calc(100% - 24px));
+}
+
+.settings-grid {
+  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.appearance-settings-section {
+  min-height: auto;
+}
+
+.accent-preview-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.accent-preview {
+  min-height: 34px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--preview-color);
+}
+
+.accent-preview.active {
+  border-color: var(--kp-text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--preview-color) 24%, transparent);
+}
+
+.accent-blue { --preview-color: #2563eb; }
+.accent-purple { --preview-color: #7c3aed; }
+.accent-green { --preview-color: #059669; }
+.accent-red { --preview-color: #dc2626; }
+.accent-slate { --preview-color: #475569; }
+
+.security-center-modal {
+  width: min(1040px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.security-overview-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--kp-border);
+  border-radius: 20px;
+  margin-bottom: 14px;
+}
+
+.security-overview-card span,
+.security-card span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--kp-muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.security-overview-card strong {
+  display: block;
+  font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -0.05em;
+}
+
+.security-overview-card p,
+.security-card p {
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+
+.security-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  overflow: auto;
+  padding-right: 3px;
+}
+
+.security-card {
+  min-height: 138px;
+  padding: 16px;
+  border: 1px solid var(--kp-border);
+  border-radius: 20px;
+}
+
+.security-card strong {
+  display: block;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.security-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.security-actions-row .ghost-button {
+  width: auto;
+}
+
+.vault-row {
+  contain: content;
+}
+
+.vault-row-main h2,
+.security-card,
+.detail-field strong {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .security-overview-card,
+  .topbar,
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .security-actions-row .ghost-button,
+  .security-overview-card .primary-button {
+    width: 100%;
+  }
+}
+
+/* KPassword 0.4.1 - menu simplificado e correção definitiva de contraste dos temas */
+.app-frame h1,
+.app-frame h2,
+.app-frame h3,
+.app-frame label,
+.app-frame small,
+.app-frame .sidebar-brand strong,
+.app-frame .vault-row-main h2,
+.app-frame .modal-header h2,
+.app-frame .settings-section h3,
+.app-frame .security-overview-card strong,
+.app-frame .security-card strong,
+.app-frame .detail-field strong,
+.app-frame .detail-card-block strong,
+.app-frame .history-entry strong,
+.app-frame .password-preview strong,
+.app-frame .update-heading strong,
+.app-frame .sidebar-panel strong,
+.app-frame .maintenance-row h3,
+.app-frame .maintenance-status strong {
+  color: var(--kp-text);
+}
+
+.app-frame p,
+.app-frame span,
+.app-frame .muted,
+.app-frame .panel-label,
+.app-frame .settings-hint,
+.app-frame .about-inline,
+.app-frame .vault-row-main p,
+.app-frame .security-card p,
+.app-frame .security-overview-card p,
+.app-frame .detail-field span,
+.app-frame .detail-field small,
+.app-frame .history-entry span,
+.app-frame .history-entry p,
+.app-frame .maintenance-row p,
+.app-frame .maintenance-status span {
+  color: var(--kp-muted);
+}
+
+.app-frame .ghost-button,
+.app-frame .secondary-button,
+.app-frame .filter-button,
+.app-frame .card-actions button,
+.app-frame .category-filter-list button,
+.app-frame .advanced-search-panel button,
+.app-frame .window-actions button,
+.app-frame .icon-button {
+  color: var(--kp-text);
+}
+
+.app-frame .primary-button,
+.app-frame .brand-mark,
+.app-frame .titlebar-logo,
+.app-frame .close-window-button:hover {
+  color: #ffffff;
+}
+
+.app-frame .danger-button,
+.app-frame .danger-sidebar-button,
+.app-frame .danger-zone,
+.app-frame .error-message {
+  color: #fecaca;
+}
+
+.app-frame .success-message,
+.app-frame .copied-message {
+  color: #16a34a;
+}
+
+.app-frame[data-theme="dark"] .success-message,
+.app-frame[data-theme="mixed"] .success-message,
+.app-frame[data-theme="dark"] .copied-message,
+.app-frame[data-theme="mixed"] .copied-message {
+  color: #bbf7d0;
+}
+
+.app-shell:not(.sidebar-collapsed) .sidebar-icon-button::after {
+  content: "‹";
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--kp-border);
+  background: var(--kp-card);
+  color: var(--kp-text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.app-shell.sidebar-collapsed .sidebar-icon-button::after {
+  content: "›";
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--kp-border);
+  background: var(--kp-card);
+  color: var(--kp-text);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.sidebar-icon-button {
+  position: relative;
+}
+
+
+/* KPassword 0.4.4 - modal de credencial compacto, sem altura fixa e sem espaço vazio */
+.credential-modal {
+  width: min(960px, calc(100vw - 28px));
+  height: auto;
+  max-height: calc(100vh - 70px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: clamp(16px, 1.6vw, 22px);
+}
+
+.credential-modal .modal-header {
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+}
+
+.credential-modal .vault-form {
+  min-height: 0;
+  max-height: calc(100vh - 165px);
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.credential-modal .form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.credential-modal label {
+  gap: 6px;
+  font-size: 13px;
+}
+
+.credential-modal input,
+.credential-modal textarea {
+  min-height: 42px;
+  padding: 10px 12px;
+}
+
+.credential-modal .password-row {
+  grid-template-columns: minmax(0, 1fr) 90px;
+  gap: 8px;
+}
+
+.credential-modal .secondary-button {
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.credential-modal .password-strength-card {
+  padding: 11px 14px;
+  border-radius: 16px;
+}
+
+.credential-modal textarea {
+  min-height: 68px;
+  max-height: 78px;
+}
+
+.credential-modal .modal-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: 8px -4px -2px;
+  padding: 12px 4px 2px;
+  border-top: 1px solid var(--kp-border);
+  background: linear-gradient(
+    to top,
+    var(--kp-bg-soft) 0%,
+    color-mix(in srgb, var(--kp-bg-soft) 96%, transparent) 76%,
+    transparent 100%
+  );
+}
+
+.credential-modal .modal-actions button {
+  min-height: 44px;
+}
+
+@media (max-width: 1050px) {
+  .credential-modal .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .credential-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 62px);
+    padding: 14px;
+  }
+
+  .credential-modal .vault-form {
+    max-height: calc(100vh - 145px);
+  }
+
+  .credential-modal .form-grid,
+  .credential-modal .password-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 720px) {
+  .credential-modal {
+    max-height: calc(100vh - 58px);
+  }
+
+  .credential-modal .vault-form {
+    max-height: calc(100vh - 132px);
+  }
+
+  .credential-modal .modal-header {
+    margin-bottom: 8px;
+  }
+
+  .credential-modal h2 {
+    font-size: 22px;
+  }
+
+  .credential-modal .vault-form {
+    gap: 8px;
+  }
+}
+
+
+/* KPassword 0.4.5 - modal de credencial sem scrollbar artificial */
+.credential-modal {
+  width: min(960px, calc(100vw - 28px));
+  height: auto;
+  max-height: calc(100vh - 70px);
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  padding: clamp(16px, 1.6vw, 22px);
+}
+
+.credential-modal .vault-form {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding-right: 0;
+}
+
+.credential-modal .modal-actions {
+  position: static;
+  margin: 8px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--kp-border);
+  background: transparent;
+}
+
+@media (max-height: 740px) {
+  .credential-modal {
+    max-height: calc(100vh - 52px);
+    overflow: hidden;
+  }
+
+  .credential-modal .vault-form {
+    max-height: calc(100vh - 135px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+    scrollbar-width: thin;
+  }
+
+  .credential-modal .modal-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: 8px -4px 0;
+    padding: 10px 4px 0;
+    background: linear-gradient(
+      to top,
+      var(--kp-bg-soft) 0%,
+      color-mix(in srgb, var(--kp-bg-soft) 94%, transparent) 80%,
+      transparent 100%
+    );
+  }
+}
